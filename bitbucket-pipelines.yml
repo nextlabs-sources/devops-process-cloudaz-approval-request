@@ -1,0 +1,42 @@
+pipelines:
+  pull-requests:
+      '**': #this runs as default for any branch not elsewhere defined
+      - step:
+          name: Run When Merged to Master Branch - Package and Deploy
+          script:
+            - if [ "${BITBUCKET_PR_DESTINATION_BRANCH}" != "master" ]; then printf 'not a target branch we want to check'; exit; fi
+            - echo 'Starting Deployment to production'
+            - apt-get update && apt-get install -y zip
+            - zip -r code.zip .
+            - pipe: atlassian/aws-lambda-deploy:0.2.1
+              variables:
+                AWS_ACCESS_KEY_ID: ${PROD_AWS_ACCESS_KEY}
+                AWS_SECRET_ACCESS_KEY: ${PROD_AWS_SECRET_KEY}
+                AWS_DEFAULT_REGION: ${PROD_AWS_REGION}
+                FUNCTION_NAME: 'process-cloudaz-approval-request'
+                COMMAND: 'update'
+                ZIP_FILE: 'code.zip'
+  branches:
+    develop:
+      - step:
+          name: package and deploy to staging
+          script:
+            - apt-get update && apt-get install -y zip
+            - zip -r code.zip .
+            - pipe: atlassian/aws-lambda-deploy:0.2.1
+              variables:
+                AWS_ACCESS_KEY_ID: ${STAGE_AWS_ACCESS_KEY}
+                AWS_SECRET_ACCESS_KEY: ${STAGE_AWS_SECRET_KEY}
+                AWS_DEFAULT_REGION: ${STAGE_AWS_REGION}
+                FUNCTION_NAME: 'process-cloudaz-staging-approval-request'
+                COMMAND: 'update'
+                ZIP_FILE: 'code.zip'
+            - pipe: atlassian/email-notify:0.3.4
+              variables:
+                USERNAME: 'admin@cloudaz.com'
+                PASSWORD: ${EMAIL_LOGIN_PASSWORD}
+                FROM: 'admin@cloudaz.com'
+                TO: 'kavashgar.manimarpan@nextlabs.com,david.lim@nextlabs.com'
+                PORT: 587
+                HOST: 'smtp.gmail.com'
+                SUBJECT: 'process-cloudaz-staging-approval-request lambda has been deployed to staging for testing. PR Can be merged once validated, then PR approve and merge will auto deploy to production'
